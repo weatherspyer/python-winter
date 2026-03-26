@@ -158,18 +158,21 @@ def update_google_sheet(sheet, row):
     sheet.update("A2:U2", [row])
     log("Sheet updated")
 
-
 def call_webhook_async():
     payload = {"functionName": "checkAndNotify"}
 
     def _send():
         try:
+            # very short timeout = don't wait
             requests.post(WEBHOOK_URL, json=payload, timeout=0.5)
-        except:
+        except requests.exceptions.ReadTimeout:
+            # expected behavior (we don't wait for response)
             pass
+        except Exception as e:
+            print(f"Webhook request failed: {e}")
 
     threading.Thread(target=_send, daemon=True).start()
-    print("Webhook triggered")
+    print("Webhook triggered (async)")
 
 
 # -----------------------------
