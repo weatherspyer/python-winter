@@ -1,0 +1,5 @@
+selenium
+gspread
+google-auth
+requests
+pillow
