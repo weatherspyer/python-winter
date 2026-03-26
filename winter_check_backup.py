@@ -9,6 +9,7 @@ import gspread
 from google.oauth2.service_account import Credentials
 import requests
 import threading
+import multiprocessing
 from zoneinfo import ZoneInfo
 
 # -----------------------------
@@ -159,22 +160,21 @@ def update_google_sheet(sheet, row):
     sheet.update("A2:U2", [row])
     log("Sheet updated")
 
-def call_webhook_async():
+def _send_webhook(payload):
+    try:
+        # No super-short timeout; let it fire
+        requests.post(WEBHOOK_URL, json=payload, timeout=10)
+    except Exception as e:
+        print(f"Webhook request failed: {e}")
+
+def call_webhook_fire_and_forget():
     payload = {"functionName": "checkAndNotify"}
 
-    def _send():
-        try:
-            # slightly longer timeout, still async
-            requests.post(WEBHOOK_URL, json=payload, timeout=5)
-        except requests.exceptions.ReadTimeout:
-            # expected behavior (don’t wait for response)
-            pass
-        except Exception as e:
-            print(f"Webhook request failed: {e}")
-
-    thread = threading.Thread(target=_send, daemon=True)
-    thread.start()
-    print("Webhook triggered (async)")
+    # Use multiprocessing.Process instead of threading
+    p = multiprocessing.Process(target=_send_webhook, args=(payload,))
+    p.daemon = True   # optional, process won't block exit
+    p.start()
+    print("Webhook triggered (fire-and-forget)")
 
 
 # -----------------------------
