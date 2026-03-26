@@ -6,6 +6,8 @@ on:
 jobs:
   run-script:
     runs-on: ubuntu-latest
+    env:
+      FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true   # ensures JS actions run on Node 24
 
     steps:
       - name: Checkout Repository
@@ -16,8 +18,8 @@ jobs:
         with:
           python-version: "3.11"
 
-      - name: Cache pip
-        uses: actions/cache@v4
+      - name: Cache pip dependencies
+        uses: actions/cache@v5
         with:
           path: ~/.cache/pip
           key: ${{ runner.os }}-pip-${{ hashFiles('**/requirements_winter_threat.txt') }}
@@ -35,7 +37,7 @@ jobs:
           success=0
           for i in 1 2 3; do
             echo "Attempt $i..."
-            # Use -u for unbuffered output to see logging in real time
+            # -u for unbuffered output so logs appear live
             if python -u winter_threat.py; then
               success=1
               break
