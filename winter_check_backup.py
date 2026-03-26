@@ -8,8 +8,6 @@ from selenium.webdriver.chrome.options import Options
 import gspread
 from google.oauth2.service_account import Credentials
 import requests
-import threading
-import multiprocessing
 from zoneinfo import ZoneInfo
 
 # -----------------------------
@@ -160,21 +158,18 @@ def update_google_sheet(sheet, row):
     sheet.update("A2:U2", [row])
     log("Sheet updated")
 
-def _send_webhook(payload):
-    try:
-        # No super-short timeout; let it fire
-        requests.post(WEBHOOK_URL, json=payload, timeout=10)
-    except Exception as e:
-        print(f"Webhook request failed: {e}")
-
-def call_webhook_fire_and_forget():
+def call_webhook_sync():
     payload = {"functionName": "checkAndNotify"}
-
-    # Use multiprocessing.Process instead of threading
-    p = multiprocessing.Process(target=_send_webhook, args=(payload,))
-    p.daemon = True   # optional, process won't block exit
-    p.start()
-    print("Webhook triggered (fire-and-forget)")
+    try:
+        response = requests.post(WEBHOOK_URL, json=payload, timeout=10)
+        if response.status_code == 200:
+            log("Webhook successfully triggered (sync)")
+        else:
+            log(f"Webhook returned status {response.status_code}")
+    except requests.exceptions.Timeout:
+        log("Webhook request timed out")
+    except Exception as e:
+        log(f"Webhook request failed: {e}")
 
 
 # -----------------------------
@@ -301,7 +296,7 @@ def main():
         run_city(nws, city, sheet, client)
 
     # 🔥 webhook AFTER all cities
-    call_webhook_async()
+    call_webhook_sync()
 
     log("Script finished")
 
