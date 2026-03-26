@@ -160,7 +160,7 @@ def update_google_sheet(sheet, row_to_write):
     existing_data = sheet.get_all_values()
     if len(existing_data) > 1:
         sheet.insert_row([""], 2)
-    sheet.update("A2:U2", [row_to_write])
+    sheet.update(values=[row_to_write], range_name="A2:U2")
 
 
 def check_and_click_refresh(driver, log_filename):
