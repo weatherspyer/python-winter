@@ -199,7 +199,7 @@ def run_city(nws_code, city_name, worksheet_name, client):
 
     layers = ["Snow", "Ice", "PQPF"]
     collected = {}
-    start_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    start_time = datetime.now(ZoneInfo("America/New_York")).strftime("%Y-%m-%d %H:%M:%S")
 
     for layer in layers:
         result = collect_layer_data(driver, layer, target_cities, url)
@@ -252,7 +252,7 @@ def run_city(nws_code, city_name, worksheet_name, client):
         driver.get(url)
         time.sleep(3)
 
-    end_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    end_time = datetime.now(ZoneInfo("America/New_York")).strftime("%Y-%m-%d %H:%M:%S")
 
     row = [
         start_time,
