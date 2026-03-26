@@ -1,0 +1,49 @@
+name: Run Winter Check Backup Script
+
+on:
+  workflow_dispatch:
+
+jobs:
+  run-script:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v5
+
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.11"
+
+      - name: Cache pip
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/pip
+          key: ${{ runner.os }}-pip-${{ hashFiles('**/requirements_winter_check_backup.txt') }}
+          restore-keys: |
+            ${{ runner.os }}-pip-
+
+      - name: Install dependencies
+        run: pip install -r requirements_winter_check_backup.txt
+
+      - name: Create credentials.json
+        run: echo "${{ secrets.GOOGLE_SHEETS_CREDENTIALS }}" | base64 --decode > credentials.json
+
+      - name: Run Winter Check Backup Script (with retry and live logs)
+        run: |
+          success=0
+          for i in 1 2 3; do
+            echo "Attempt $i..."
+            if python -u winter_check_backup.py; then
+              success=1
+              break
+            fi
+            echo "Attempt $i failed. Retrying in 20 seconds..."
+            sleep 20
+          done
+
+          if [ $success -ne 1 ]; then
+            echo "All attempts failed."
+            exit 1
+          fi
