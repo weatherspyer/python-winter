@@ -164,15 +164,16 @@ def call_webhook_async():
 
     def _send():
         try:
-            # very short timeout = don't wait
-            requests.post(WEBHOOK_URL, json=payload, timeout=0.5)
+            # slightly longer timeout, still async
+            requests.post(WEBHOOK_URL, json=payload, timeout=5)
         except requests.exceptions.ReadTimeout:
-            # expected behavior (we don't wait for response)
+            # expected behavior (don’t wait for response)
             pass
         except Exception as e:
             print(f"Webhook request failed: {e}")
 
-    threading.Thread(target=_send, daemon=True).start()
+    thread = threading.Thread(target=_send, daemon=True)
+    thread.start()
     print("Webhook triggered (async)")
 
 
