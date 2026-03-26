@@ -21,7 +21,7 @@ GOOGLE_SCOPES = [
     "https://www.googleapis.com/auth/drive"
 ]
 
-WEBHOOK_URL = "https://script.google.com/macros/s/AKfycbwfejzuQRfNXNkKDtANWLTOYMPApzchk_7zehTaJzRRP_90cGLRaOHojiYoeFUEE--00w/exec"
+WEBHOOK_URL = "https://script.google.com/macros/s/AKfycbzw8urLAI5RJNHsixvaQfRwKe-LBD2OwhXZJh8QBZkcPBZ8Y__5tcE6M7fnywm3N5NsMg/exec"
 
 CITIES = [
     ("PBZ", "Franklin Park, PA", "Shaler"),
