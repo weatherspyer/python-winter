@@ -1,0 +1,6 @@
+requests
+pillow
+gspread
+google-auth
+selenium
+beautifulsoup4
