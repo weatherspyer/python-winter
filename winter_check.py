@@ -109,7 +109,7 @@ def send_error_email(log_content, screenshot_path=None):
 
 def wait_for_tooltip_data(driver, map_area, timeout=60, log_filename=None):
     if log_filename:
-        log_live("Waiting for tooltip to populate...", log_filename)
+        log_live("Waiting for tooltip and sublabel to populate...", log_filename)
     start_time = time.time()
     actions = ActionChains(driver)
     while time.time() - start_time < timeout:
@@ -118,15 +118,19 @@ def wait_for_tooltip_data(driver, map_area, timeout=60, log_filename=None):
             dy = random.randint(-50, 50)
             actions.move_to_element_with_offset(map_area, dx, dy).perform()
             time.sleep(0.8)
+            
             tooltip_text = driver.find_element(By.ID, "map-tooltip-number").text.strip().replace(" in.", "")
-            if tooltip_text != "":
+            sublabel_text = driver.find_element(By.ID, "map-tooltip-sublabel").text.strip()
+            
+            # Continuous check to ensure BOTH data items are actively populated
+            if tooltip_text != "" and sublabel_text != "":
                 if log_filename:
-                    log_live(f"Tooltip ready: {tooltip_text}", log_filename)
+                    log_live(f"Tooltip ready ({tooltip_text}) and Sublabel ready ({sublabel_text})", log_filename)
                 return True
         except Exception:
             time.sleep(0.5)
     if log_filename:
-        log_live("⚠️ Tooltip did not populate within timeout.", log_filename)
+        log_live("⚠️ Tooltip or Sublabel did not populate within timeout.", log_filename)
     return False
 
 
@@ -152,10 +156,6 @@ def collect_tooltip(driver, map_area, x_offset, y_offset, is_percent=False):
     return tooltip
 
 
-def collect_sublabel(driver):
-    return driver.find_element(By.ID, "map-tooltip-sublabel").text.strip()
-
-
 def update_google_sheet(sheet, row_to_write):
     existing_data = sheet.get_all_values()
     if len(existing_data) > 1:
@@ -173,7 +173,6 @@ def check_and_click_refresh(driver, log_filename):
     except Exception:
         log_live("Checked for refresh button: not present.", log_filename)
         return False
-
 
 
 def call_webhook_async():
@@ -240,18 +239,22 @@ def main():
                     log_live(f"Re-clicked scenario {scenario} after refresh", log_filename)
                     time.sleep(6)
 
+                # This verification ensures both the numbers and sublabels are loaded on the DOM map
                 wait_for_tooltip_data(driver, map_area, timeout=120, log_filename=log_filename)
+
+                # Safely harvest the current global sublabel text
+                try:
+                    current_sublabel = driver.find_element(By.ID, "map-tooltip-sublabel").text.strip()
+                except Exception:
+                    current_sublabel = "Unknown Period"
 
                 for city in CITIES:
                     tooltip = collect_tooltip(driver, map_area, city["x_offset"], city["y_offset"])
                     collected_data[city["city_name"]][f"{layer['prefix']}_{scenario}"] = tooltip
                     log_live(f"{city['city_name']} {layer['name']} {scenario} collected: {tooltip}", log_filename)
-
-            if layer["name"] == "Snow":
-                for city in CITIES:
-                    sublabel = collect_sublabel(driver)
-                    collected_data[city["city_name"]]["expected_sublabel"] = sublabel
-                    log_live(f"{city['city_name']} expected_sublabel collected: {sublabel}", log_filename)
+                    
+                    # Store sublabel iteratively per city to avoid missing/blank entries later
+                    collected_data[city["city_name"]]["expected_sublabel"] = current_sublabel
 
         # --- Snow exceedances ---
         driver.find_element(By.CSS_SELECTOR, f"a[value='prob_sn']").click()
@@ -287,7 +290,7 @@ def main():
             sheet = client.open_by_url(SPREADSHEET_URL).worksheet(city["sheet_name"])
             row_to_write = [
                 current_datetime_display,  # A2
-                collected_data[city["city_name"]]["expected_sublabel"],  # B2
+                collected_data[city["city_name"]].get("expected_sublabel", "Unknown Period"),  # B2
                 float(collected_data[city["city_name"]]["snow_low_end"]),
                 float(collected_data[city["city_name"]]["snow_expected"]),
                 float(collected_data[city["city_name"]]["snow_high_end"]),
