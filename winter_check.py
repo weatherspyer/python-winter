@@ -181,7 +181,7 @@ def call_webhook_async():
     def _send():
         try:
             # very short timeout = don't wait
-            requests.post(WEBHOOK_URL, json=payload, timeout=0.5)
+            requests.post(WEBHOOK_URL, json=payload, timeout=15)
         except requests.exceptions.ReadTimeout:
             # expected behavior (we don't wait for response)
             pass
