@@ -135,14 +135,25 @@ def wait_for_tooltip_data(driver, map_area, timeout=60, log_filename=None):
 
 
 def collect_tooltip(driver, map_area, x_offset, y_offset, is_percent=False):
-    actions = ActionChains(driver)
     tooltip = ""
     for attempt in range(5):
         try:
-            dx = random.randint(-5, 5)
-            dy = random.randint(-5, 5)
+            # Create a FRESH ActionChains instance to wipe the cursor's memory
+            actions = ActionChains(driver)
+            
+            # 1. Teleport the mouse to the absolute center of the map first 
+            # to wake up the map container's hover listener
+            actions.move_to_element(map_area).perform()
+            time.sleep(0.2)
+            
+            # 2. Now move from the center out to your city offsets with a slight random jitter
+            dx = random.randint(-3, 3)
+            dy = random.randint(-3, 3)
             actions.move_to_element_with_offset(map_area, x_offset + dx, y_offset + dy).perform()
+            
+            # 3. Give the browser a clean second to register the new coordinate hover
             time.sleep(1)
+            
             tooltip = driver.find_element(By.ID, "map-tooltip-number").text.strip()
             tooltip = tooltip.replace(" in.", "")
             if is_percent:
@@ -151,6 +162,7 @@ def collect_tooltip(driver, map_area, x_offset, y_offset, is_percent=False):
                 break
         except Exception:
             time.sleep(0.5)
+            
     if tooltip == "":
         tooltip = "999"
     return tooltip
