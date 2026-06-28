@@ -111,9 +111,9 @@ def wait_for_tooltip_data(driver, map_area, timeout=60, log_filename=None):
     if log_filename:
         log_live("Waiting for tooltip and sublabel to populate...", log_filename)
     start_time = time.time()
+    actions = ActionChains(driver)
     while time.time() - start_time < timeout:
         try:
-            actions = ActionChains(driver)
             dx = random.randint(-50, 50)
             dy = random.randint(-50, 50)
             actions.move_to_element_with_offset(map_area, dx, dy).perform()
@@ -122,6 +122,7 @@ def wait_for_tooltip_data(driver, map_area, timeout=60, log_filename=None):
             tooltip_text = driver.find_element(By.ID, "map-tooltip-number").text.strip().replace(" in.", "")
             sublabel_text = driver.find_element(By.ID, "map-tooltip-sublabel").text.strip()
             
+            # Continuous check to ensure BOTH data items are actively populated
             if tooltip_text != "" and sublabel_text != "":
                 if log_filename:
                     log_live(f"Tooltip ready ({tooltip_text}) and Sublabel ready ({sublabel_text})", log_filename)
@@ -133,17 +134,15 @@ def wait_for_tooltip_data(driver, map_area, timeout=60, log_filename=None):
     return False
 
 
-def collect_tooltip(driver, map_area, x_offset, y_offset, city_name, is_percent=False):
+def collect_tooltip(driver, map_area, x_offset, y_offset, is_percent=False):
+    actions = ActionChains(driver)
     tooltip = ""
     for attempt in range(5):
         try:
-            # Re-instantiate ActionChains inside the loop to avoid chain pollution
-            actions = ActionChains(driver)
-            dx = random.randint(-2, 2)
-            dy = random.randint(-2, 2)
+            dx = random.randint(-5, 5)
+            dy = random.randint(-5, 5)
             actions.move_to_element_with_offset(map_area, x_offset + dx, y_offset + dy).perform()
-            time.sleep(1.5)
-            
+            time.sleep(1)
             tooltip = driver.find_element(By.ID, "map-tooltip-number").text.strip()
             tooltip = tooltip.replace(" in.", "")
             if is_percent:
@@ -152,17 +151,8 @@ def collect_tooltip(driver, map_area, x_offset, y_offset, city_name, is_percent=
                 break
         except Exception:
             time.sleep(0.5)
-            
-    # Universal 999 Screenshot Capture Trigger
     if tooltip == "":
         tooltip = "999"
-        timestamp = datetime.now().strftime('%H%M%S')
-        diag_path = os.path.join(SCREENSHOT_DIR, f"miss_{city_name}_{timestamp}.png")
-        try:
-            driver.save_screenshot(diag_path)
-        except Exception:
-            pass
-            
     return tooltip
 
 
@@ -190,8 +180,10 @@ def call_webhook_async():
 
     def _send():
         try:
+            # very short timeout = don't wait
             requests.post(WEBHOOK_URL, json=payload, timeout=15)
         except requests.exceptions.ReadTimeout:
+            # expected behavior (we don't wait for response)
             pass
         except Exception as e:
             print(f"Webhook request failed: {e}")
@@ -217,7 +209,6 @@ def main():
     chrome_options = Options()
     chrome_options.add_argument("--window-size=1200,926")
     chrome_options.add_argument("--headless=new")
-    chrome_options.add_argument("--force-device-scale-factor=1")  # Force consistent device rendering scaling
     driver = webdriver.Chrome(options=chrome_options)
 
     try:
@@ -248,17 +239,21 @@ def main():
                     log_live(f"Re-clicked scenario {scenario} after refresh", log_filename)
                     time.sleep(6)
 
+                # This verification ensures both the numbers and sublabels are loaded on the DOM map
                 wait_for_tooltip_data(driver, map_area, timeout=120, log_filename=log_filename)
 
+                # Safely harvest the current global sublabel text
                 try:
                     current_sublabel = driver.find_element(By.ID, "map-tooltip-sublabel").text.strip()
                 except Exception:
                     current_sublabel = "Unknown Period"
 
                 for city in CITIES:
-                    tooltip = collect_tooltip(driver, map_area, city["x_offset"], city["y_offset"], city["city_name"])
+                    tooltip = collect_tooltip(driver, map_area, city["x_offset"], city["y_offset"])
                     collected_data[city["city_name"]][f"{layer['prefix']}_{scenario}"] = tooltip
                     log_live(f"{city['city_name']} {layer['name']} {scenario} collected: {tooltip}", log_filename)
+                    
+                    # Store sublabel iteratively per city to avoid missing/blank entries later
                     collected_data[city["city_name"]]["expected_sublabel"] = current_sublabel
 
         # --- Snow exceedances ---
@@ -281,7 +276,7 @@ def main():
                 wait_for_tooltip_data(driver, map_area, timeout=60, log_filename=log_filename)
 
                 for city in CITIES:
-                    tooltip = collect_tooltip(driver, map_area, city["x_offset"], city["y_offset"], city["city_name"], is_percent=True)
+                    tooltip = collect_tooltip(driver, map_area, city["x_offset"], city["y_offset"], is_percent=True)
                     collected_data[city["city_name"]][f"snow_exceed_{value}"] = tooltip
                     log_live(f"{city['city_name']} Snow exceed {value} collected: {tooltip}", log_filename)
             except Exception as e:
@@ -294,8 +289,8 @@ def main():
         for city in CITIES:
             sheet = client.open_by_url(SPREADSHEET_URL).worksheet(city["sheet_name"])
             row_to_write = [
-                current_datetime_display,
-                collected_data[city["city_name"]].get("expected_sublabel", "Unknown Period"),
+                current_datetime_display,  # A2
+                collected_data[city["city_name"]].get("expected_sublabel", "Unknown Period"),  # B2
                 float(collected_data[city["city_name"]]["snow_low_end"]),
                 float(collected_data[city["city_name"]]["snow_expected"]),
                 float(collected_data[city["city_name"]]["snow_high_end"]),
@@ -319,6 +314,7 @@ def main():
             update_google_sheet(sheet, row_to_write)
             log_live(f"Updated Google Sheet for {city['city_name']}", log_filename)
 
+        # --- Call Webhook ---
         call_webhook_async()
 
     except Exception as e:
