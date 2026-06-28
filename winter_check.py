@@ -138,31 +138,37 @@ def collect_tooltip(driver, map_area, x_offset, y_offset, is_percent=False):
     tooltip = ""
     for attempt in range(5):
         try:
-            # Create a FRESH ActionChains instance to wipe the cursor's memory
+            # 1. Create a fresh ActionChains instance to clear the driver's memory
             actions = ActionChains(driver)
             
-            # 1. Teleport the mouse to the absolute center of the map first 
-            # to wake up the map container's hover listener
+            # 2. Drop the cursor at the absolute center of the map container first
             actions.move_to_element(map_area).perform()
-            time.sleep(0.2)
+            time.sleep(0.1)
             
-            # 2. Now move from the center out to your city offsets with a slight random jitter
-            dx = random.randint(-3, 3)
-            dy = random.randint(-3, 3)
+            # 3. Slide cleanly from the center to your target city coordinates with a small jitter
+            dx = random.randint(-2, 2)
+            dy = random.randint(-2, 2)
             actions.move_to_element_with_offset(map_area, x_offset + dx, y_offset + dy).perform()
             
-            # 3. Give the browser a clean second to register the new coordinate hover
-            time.sleep(1)
-            
-            tooltip = driver.find_element(By.ID, "map-tooltip-number").text.strip()
-            tooltip = tooltip.replace(" in.", "")
-            if is_percent:
-                tooltip = tooltip.replace("%", "")
+            # 4. Polling loop: Give the map's UI 1.5 seconds to flip the text from blank to data
+            start_poll = time.time()
+            while time.time() - start_poll < 1.5:
+                raw_text = driver.find_element(By.ID, "map-tooltip-number").text.strip()
+                if raw_text != "":
+                    tooltip = raw_text.replace(" in.", "")
+                    if is_percent:
+                        tooltip = tooltip.replace("%", "")
+                    break  # Found data! Break the polling loop
+                time.sleep(0.1)  # Check the text field every 100ms
+                
+            # If we successfully caught data during polling, break the attempt loop entirely
             if tooltip != "":
                 break
+                
         except Exception:
-            time.sleep(0.5)
+            time.sleep(0.3)
             
+    # If it fails all 5 attempts and stays completely blank, fall back to 999
     if tooltip == "":
         tooltip = "999"
     return tooltip
