@@ -41,13 +41,15 @@ SPREADSHEET_URL = f"https://docs.google.com/spreadsheets/d/{SHEET_ID}/edit"
 # Webhook URL
 WEBHOOK_URL = "https://script.google.com/macros/s/AKfycbzw8urLAI5RJNHsixvaQfRwKe-LBD2OwhXZJh8QBZkcPBZ8Y__5tcE6M7fnywm3N5NsMg/exec"
 
-# Cities configuration
+# Core Cluster Cities (PA / OH)
 CITIES = [
     {"WFO": "PBZ", "x_offset": -14, "y_offset": -194, "city_name": "Conneaut", "sheet_name": "Conneaut"},
     {"WFO": "PBZ", "x_offset": 42, "y_offset": -40, "city_name": "Shaler", "sheet_name": "Shaler"},
     {"WFO": "PBZ", "x_offset": -26, "y_offset": -106, "city_name": "Austintown", "sheet_name": "Austintown"},
-    {"WFO": "PBZ", "x_offset": 260, "y_offset": 158, "city_name": "Haymarket", "sheet_name": "Haymarket"},
 ]
+
+# Standalone Virginia Target
+HAYMARKET = {"WFO": "PBZ", "x_offset": 260, "y_offset": 158, "city_name": "Haymarket", "sheet_name": "Haymarket"}
 
 # Layers and scenarios
 LAYERS = [
@@ -111,9 +113,9 @@ def wait_for_tooltip_data(driver, map_area, timeout=60, log_filename=None):
     if log_filename:
         log_live("Waiting for tooltip and sublabel to populate...", log_filename)
     start_time = time.time()
-    actions = ActionChains(driver)
     while time.time() - start_time < timeout:
         try:
+            actions = ActionChains(driver)
             dx = random.randint(-50, 50)
             dy = random.randint(-50, 50)
             actions.move_to_element_with_offset(map_area, dx, dy).perform()
@@ -122,7 +124,6 @@ def wait_for_tooltip_data(driver, map_area, timeout=60, log_filename=None):
             tooltip_text = driver.find_element(By.ID, "map-tooltip-number").text.strip().replace(" in.", "")
             sublabel_text = driver.find_element(By.ID, "map-tooltip-sublabel").text.strip()
             
-            # Continuous check to ensure BOTH data items are actively populated
             if tooltip_text != "" and sublabel_text != "":
                 if log_filename:
                     log_live(f"Tooltip ready ({tooltip_text}) and Sublabel ready ({sublabel_text})", log_filename)
@@ -134,15 +135,17 @@ def wait_for_tooltip_data(driver, map_area, timeout=60, log_filename=None):
     return False
 
 
-def collect_tooltip(driver, map_area, x_offset, y_offset, is_percent=False):
-    actions = ActionChains(driver)
+def collect_tooltip(driver, map_area, x_offset, y_offset, city_name, is_percent=False):
     tooltip = ""
     for attempt in range(5):
         try:
-            dx = random.randint(-5, 5)
-            dy = random.randint(-5, 5)
+            actions = ActionChains(driver)
+            dx = random.randint(-2, 2)
+            dy = random.randint(-2, 2)
+            
             actions.move_to_element_with_offset(map_area, x_offset + dx, y_offset + dy).perform()
-            time.sleep(1)
+            time.sleep(1.5)
+            
             tooltip = driver.find_element(By.ID, "map-tooltip-number").text.strip()
             tooltip = tooltip.replace(" in.", "")
             if is_percent:
@@ -151,8 +154,17 @@ def collect_tooltip(driver, map_area, x_offset, y_offset, is_percent=False):
                 break
         except Exception:
             time.sleep(0.5)
+            
+    # GLOBAL TRIGGER: If ANY city fails to find data, capture a screenshot instantly
     if tooltip == "":
         tooltip = "999"
+        timestamp = datetime.now().strftime('%H%M%S')
+        diag_path = os.path.join(SCREENSHOT_DIR, f"miss_{city_name}_{timestamp}.png")
+        try:
+            driver.save_screenshot(diag_path)
+        except Exception:
+            pass
+            
     return tooltip
 
 
@@ -180,10 +192,8 @@ def call_webhook_async():
 
     def _send():
         try:
-            # very short timeout = don't wait
             requests.post(WEBHOOK_URL, json=payload, timeout=15)
         except requests.exceptions.ReadTimeout:
-            # expected behavior (we don't wait for response)
             pass
         except Exception as e:
             print(f"Webhook request failed: {e}")
@@ -203,12 +213,14 @@ def main():
     creds = Credentials.from_service_account_file("credentials.json", scopes=GOOGLE_SCOPES)
     client = gspread.authorize(creds)
 
-    collected_data = {city["city_name"]: {} for city in CITIES}
+    all_tracking_cities = CITIES + [HAYMARKET]
+    collected_data = {city["city_name"]: {} for city in all_tracking_cities}
     current_datetime_display = datetime.now(ZoneInfo("America/New_York")).strftime("%Y-%m-%d %H:%M:%S")
 
     chrome_options = Options()
     chrome_options.add_argument("--window-size=1200,926")
     chrome_options.add_argument("--headless=new")
+    chrome_options.add_argument("--force-device-scale-factor=1")
     driver = webdriver.Chrome(options=chrome_options)
 
     try:
@@ -239,22 +251,25 @@ def main():
                     log_live(f"Re-clicked scenario {scenario} after refresh", log_filename)
                     time.sleep(6)
 
-                # This verification ensures both the numbers and sublabels are loaded on the DOM map
                 wait_for_tooltip_data(driver, map_area, timeout=120, log_filename=log_filename)
 
-                # Safely harvest the current global sublabel text
                 try:
                     current_sublabel = driver.find_element(By.ID, "map-tooltip-sublabel").text.strip()
                 except Exception:
                     current_sublabel = "Unknown Period"
 
+                # 1. Process Core Cluster
                 for city in CITIES:
-                    tooltip = collect_tooltip(driver, map_area, city["x_offset"], city["y_offset"])
+                    tooltip = collect_tooltip(driver, map_area, city["x_offset"], city["y_offset"], city["city_name"])
                     collected_data[city["city_name"]][f"{layer['prefix']}_{scenario}"] = tooltip
                     log_live(f"{city['city_name']} {layer['name']} {scenario} collected: {tooltip}", log_filename)
-                    
-                    # Store sublabel iteratively per city to avoid missing/blank entries later
                     collected_data[city["city_name"]]["expected_sublabel"] = current_sublabel
+
+                # 2. Process Isolated Haymarket
+                h_tooltip = collect_tooltip(driver, map_area, HAYMARKET["x_offset"], HAYMARKET["y_offset"], HAYMARKET["city_name"])
+                collected_data[HAYMARKET["city_name"]][f"{layer['prefix']}_{scenario}"] = h_tooltip
+                log_live(f"{HAYMARKET['city_name']} {layer['name']} {scenario} collected: {h_tooltip}", log_filename)
+                collected_data[HAYMARKET["city_name"]]["expected_sublabel"] = current_sublabel
 
         # --- Snow exceedances ---
         driver.find_element(By.CSS_SELECTOR, f"a[value='prob_sn']").click()
@@ -275,10 +290,17 @@ def main():
 
                 wait_for_tooltip_data(driver, map_area, timeout=60, log_filename=log_filename)
 
+                # Core Cluster Exceedances
                 for city in CITIES:
-                    tooltip = collect_tooltip(driver, map_area, city["x_offset"], city["y_offset"], is_percent=True)
+                    tooltip = collect_tooltip(driver, map_area, city["x_offset"], city["y_offset"], city["city_name"], is_percent=True)
                     collected_data[city["city_name"]][f"snow_exceed_{value}"] = tooltip
                     log_live(f"{city['city_name']} Snow exceed {value} collected: {tooltip}", log_filename)
+
+                # Isolated Haymarket Exceedance
+                h_ex_tooltip = collect_tooltip(driver, map_area, HAYMARKET["x_offset"], HAYMARKET["y_offset"], HAYMARKET["city_name"], is_percent=True)
+                collected_data[HAYMARKET["city_name"]][f"snow_exceed_{value}"] = h_ex_tooltip
+                log_live(f"{HAYMARKET['city_name']} Snow exceed {value} collected: {h_ex_tooltip}", log_filename)
+
             except Exception as e:
                 log_live(f"Failed to collect Snow exceedance {value}: {e}", log_filename)
 
@@ -286,11 +308,11 @@ def main():
         log_live(f"Script ended at: {end_time}", log_filename)
 
         # --- Update Google Sheets ---
-        for city in CITIES:
+        for city in all_tracking_cities:
             sheet = client.open_by_url(SPREADSHEET_URL).worksheet(city["sheet_name"])
             row_to_write = [
-                current_datetime_display,  # A2
-                collected_data[city["city_name"]].get("expected_sublabel", "Unknown Period"),  # B2
+                current_datetime_display,
+                collected_data[city["city_name"]].get("expected_sublabel", "Unknown Period"),
                 float(collected_data[city["city_name"]]["snow_low_end"]),
                 float(collected_data[city["city_name"]]["snow_expected"]),
                 float(collected_data[city["city_name"]]["snow_high_end"]),
@@ -314,7 +336,6 @@ def main():
             update_google_sheet(sheet, row_to_write)
             log_live(f"Updated Google Sheet for {city['city_name']}", log_filename)
 
-        # --- Call Webhook ---
         call_webhook_async()
 
     except Exception as e:
