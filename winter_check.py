@@ -136,18 +136,30 @@ def wait_for_tooltip_data(driver, map_area, timeout=60, log_filename=None):
 
 def collect_tooltip(driver, map_area, x_offset, y_offset, is_percent=False):
     tooltip = ""
+    
+    # 1. Get the absolute position of the map on the screen
+    map_location = map_area.location
+    map_x = map_location['x']
+    map_y = map_location['y']
+    
+    # 2. Calculate the true center of the map element
+    map_size = map_area.size
+    center_x = map_x + (map_size['width'] / 2)
+    center_y = map_y + (map_size['height'] / 2)
+    
     for attempt in range(5):
         try:
-            # Create a FRESH action chain INSIDE the loop so movements don't stack up
             actions = ActionChains(driver)
             
-            dx = random.randint(-2, 2)
-            dy = random.randint(-2, 2)
+            dx = random.randint(-1, 1)
+            dy = random.randint(-1, 1)
             
-            # Move directly to the city coordinates
-            actions.move_to_element_with_offset(map_area, x_offset + dx, y_offset + dy).perform()
+            # 3. Calculate absolute page coordinates (Center + Offset)
+            target_x = int(center_x + x_offset + dx)
+            target_y = int(center_y + y_offset + dy)
             
-            # Let the mouse sit perfectly still for 1.5 seconds so the browser updates the text
+            # 4. Move to an absolute position on the page, ignoring element scaling quirks
+            actions.move_by_offset(target_x, target_y).perform()
             time.sleep(1.5)
             
             tooltip = driver.find_element(By.ID, "map-tooltip-number").text.strip()
@@ -155,13 +167,18 @@ def collect_tooltip(driver, map_area, x_offset, y_offset, is_percent=False):
             if is_percent:
                 tooltip = tooltip.replace("%", "")
                 
-            # If we got ANY text (even "0.0"), break the loop immediately
             if tooltip != "":
                 break
         except Exception:
             time.sleep(0.5)
+        finally:
+            # Crucial: Reset the virtual pointer back to (0,0) after every attempt
+            # so the next calculation doesn't compound coordinates
+            try:
+                ActionChains(driver).move_by_offset(-target_x, -target_y).perform()
+            except Exception:
+                pass
             
-    # If the text is still blank after 5 clean attempts, the map is showing a 0-value layer
     if tooltip == "":
         tooltip = "0.0"
         
