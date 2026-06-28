@@ -135,53 +135,24 @@ def wait_for_tooltip_data(driver, map_area, timeout=60, log_filename=None):
 
 
 def collect_tooltip(driver, map_area, x_offset, y_offset, is_percent=False):
+    actions = ActionChains(driver)
     tooltip = ""
-    
-    # 1. Get the absolute position of the map on the screen
-    map_location = map_area.location
-    map_x = map_location['x']
-    map_y = map_location['y']
-    
-    # 2. Calculate the true center of the map element
-    map_size = map_area.size
-    center_x = map_x + (map_size['width'] / 2)
-    center_y = map_y + (map_size['height'] / 2)
-    
     for attempt in range(5):
         try:
-            actions = ActionChains(driver)
-            
-            dx = random.randint(-1, 1)
-            dy = random.randint(-1, 1)
-            
-            # 3. Calculate absolute page coordinates (Center + Offset)
-            target_x = int(center_x + x_offset + dx)
-            target_y = int(center_y + y_offset + dy)
-            
-            # 4. Move to an absolute position on the page, ignoring element scaling quirks
-            actions.move_by_offset(target_x, target_y).perform()
-            time.sleep(1.5)
-            
+            dx = random.randint(-5, 5)
+            dy = random.randint(-5, 5)
+            actions.move_to_element_with_offset(map_area, x_offset + dx, y_offset + dy).perform()
+            time.sleep(1)
             tooltip = driver.find_element(By.ID, "map-tooltip-number").text.strip()
             tooltip = tooltip.replace(" in.", "")
             if is_percent:
                 tooltip = tooltip.replace("%", "")
-                
             if tooltip != "":
                 break
         except Exception:
             time.sleep(0.5)
-        finally:
-            # Crucial: Reset the virtual pointer back to (0,0) after every attempt
-            # so the next calculation doesn't compound coordinates
-            try:
-                ActionChains(driver).move_by_offset(-target_x, -target_y).perform()
-            except Exception:
-                pass
-            
     if tooltip == "":
-        tooltip = "0.0"
-        
+        tooltip = "999"
     return tooltip
 
 
