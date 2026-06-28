@@ -138,39 +138,33 @@ def collect_tooltip(driver, map_area, x_offset, y_offset, is_percent=False):
     tooltip = ""
     for attempt in range(5):
         try:
-            # 1. Create a fresh ActionChains instance to clear the driver's memory
+            # Create a FRESH action chain INSIDE the loop so movements don't stack up
             actions = ActionChains(driver)
             
-            # 2. Drop the cursor at the absolute center of the map container first
-            actions.move_to_element(map_area).perform()
-            time.sleep(0.1)
-            
-            # 3. Slide cleanly from the center to your target city coordinates with a small jitter
             dx = random.randint(-2, 2)
             dy = random.randint(-2, 2)
+            
+            # Move directly to the city coordinates
             actions.move_to_element_with_offset(map_area, x_offset + dx, y_offset + dy).perform()
             
-            # 4. Polling loop: Give the map's UI 1.5 seconds to flip the text from blank to data
-            start_poll = time.time()
-            while time.time() - start_poll < 1.5:
-                raw_text = driver.find_element(By.ID, "map-tooltip-number").text.strip()
-                if raw_text != "":
-                    tooltip = raw_text.replace(" in.", "")
-                    if is_percent:
-                        tooltip = tooltip.replace("%", "")
-                    break  # Found data! Break the polling loop
-                time.sleep(0.1)  # Check the text field every 100ms
+            # Let the mouse sit perfectly still for 1.5 seconds so the browser updates the text
+            time.sleep(1.5)
+            
+            tooltip = driver.find_element(By.ID, "map-tooltip-number").text.strip()
+            tooltip = tooltip.replace(" in.", "")
+            if is_percent:
+                tooltip = tooltip.replace("%", "")
                 
-            # If we successfully caught data during polling, break the attempt loop entirely
+            # If we got ANY text (even "0.0"), break the loop immediately
             if tooltip != "":
                 break
-                
         except Exception:
-            time.sleep(0.3)
+            time.sleep(0.5)
             
-    # If it fails all 5 attempts and stays completely blank, fall back to 999
+    # If the text is still blank after 5 clean attempts, the map is showing a 0-value layer
     if tooltip == "":
-        tooltip = "999"
+        tooltip = "0.0"
+        
     return tooltip
 
 
