@@ -111,18 +111,25 @@ def wait_for_tooltip_data(driver, map_area, timeout=60, log_filename=None):
     if log_filename:
         log_live("Waiting for tooltip and sublabel to populate...", log_filename)
     start_time = time.time()
-    actions = ActionChains(driver)
+    
+    # Move the cursor completely off the map canvas to reset its hover state
+    try:
+        ActionChains(driver).move_to_element_with_offset(map_area, -10, -10).perform()
+    except Exception:
+        pass
+
     while time.time() - start_time < timeout:
         try:
-            dx = random.randint(-50, 50)
-            dy = random.randint(-50, 50)
+            actions = ActionChains(driver)
+            # Give a slightly wider jitter to wake up the canvas listener
+            dx = random.randint(-40, 40)
+            dy = random.randint(-40, 40)
             actions.move_to_element_with_offset(map_area, dx, dy).perform()
-            time.sleep(0.8)
+            time.sleep(1.0)
             
             tooltip_text = driver.find_element(By.ID, "map-tooltip-number").text.strip().replace(" in.", "")
             sublabel_text = driver.find_element(By.ID, "map-tooltip-sublabel").text.strip()
             
-            # Continuous check to ensure BOTH data items are actively populated
             if tooltip_text != "" and sublabel_text != "":
                 if log_filename:
                     log_live(f"Tooltip ready ({tooltip_text}) and Sublabel ready ({sublabel_text})", log_filename)
@@ -134,25 +141,43 @@ def wait_for_tooltip_data(driver, map_area, timeout=60, log_filename=None):
     return False
 
 
-def collect_tooltip(driver, map_area, x_offset, y_offset, is_percent=False):
-    actions = ActionChains(driver)
+def collect_tooltip(driver, map_area, x_offset, y_offset, city_name, is_percent=False):
     tooltip = ""
+    
     for attempt in range(5):
         try:
-            dx = random.randint(-5, 5)
-            dy = random.randint(-5, 5)
+            # 1. Clear action state and hard reset hover state off-canvas first
+            actions_reset = ActionChains(driver)
+            actions_reset.move_to_element_with_offset(map_area, -20, -20).perform()
+            time.sleep(0.5)
+            
+            # 2. Perform the actual target hover with slightly expanded jitter bounds
+            actions = ActionChains(driver)
+            dx = random.randint(-4, 4)
+            dy = random.randint(-4, 4)
             actions.move_to_element_with_offset(map_area, x_offset + dx, y_offset + dy).perform()
-            time.sleep(1)
+            time.sleep(2.0)  # Upped from 1.5 to safely account for network/DOM update lags
+            
             tooltip = driver.find_element(By.ID, "map-tooltip-number").text.strip()
             tooltip = tooltip.replace(" in.", "")
             if is_percent:
                 tooltip = tooltip.replace("%", "")
+                
             if tooltip != "":
                 break
         except Exception:
             time.sleep(0.5)
+            
+    # Universal 999 Screenshot Capture Trigger
     if tooltip == "":
         tooltip = "999"
+        timestamp = datetime.now().strftime('%H%M%S')
+        diag_path = os.path.join(SCREENSHOT_DIR, f"miss_{city_name}_{timestamp}.png")
+        try:
+            driver.save_screenshot(diag_path)
+        except Exception:
+            pass
+            
     return tooltip
 
 
