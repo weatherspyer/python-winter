@@ -49,13 +49,3 @@ jobs:
             echo "All attempts failed."
             exit 1
           fi
-
-      # --- Upload Diagnostic Screenshots ---
-      - name: Archive Map Coordinates Artifacts
-        uses: actions/upload-artifact@v4
-        if: always()
-        with:
-          name: map-diagnostic-screenshots
-          path: screenshots/
-          if-no-files-found: ignore
-          retention-days: 5
