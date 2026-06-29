@@ -57,3 +57,5 @@ jobs:
         with:
           name: map-diagnostic-screenshots
           path: screenshots/
+          if-no-files-found: ignore
+          retention-days: 5
