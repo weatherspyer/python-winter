@@ -43,12 +43,12 @@ WEBHOOK_URL = "https://script.google.com/macros/s/AKfycbzw8urLAI5RJNHsixvaQfRwKe
 # Base URL template
 BASE_MAP_URL = "https://www.wpc.ncep.noaa.gov/Prob_Precip/?zoom={zoom_param}"
 
-# Cities configuration - added 'zoom' parameters to target regional domains
+# Cities configuration
 CITIES = [
     {"zoom": "PBZ", "x_offset": -14, "y_offset": -194, "city_name": "Conneaut", "sheet_name": "Conneaut"},
     {"zoom": "PBZ", "x_offset": 42, "y_offset": -40, "city_name": "Shaler", "sheet_name": "Shaler"},
     {"zoom": "PBZ", "x_offset": -26, "y_offset": -106, "city_name": "Austintown", "sheet_name": "Austintown"},
-    {"zoom": "LWX", "x_offset": 23, "y_offset": -76, "city_name": "Haymarket", "sheet_name": "Haymarket"},
+    {"zoom": "LWX", "x_offset": 23, "y_offset": -74, "city_name": "Haymarket", "sheet_name": "Haymarket"},
 ]
 
 LAYERS = [
@@ -210,6 +210,9 @@ def main():
 
     collected_data = {city["city_name"]: {} for city in CITIES}
     current_datetime_display = datetime.now(ZoneInfo("America/New_York")).strftime("%Y-%m-%d %H:%M:%S")
+    
+    # Global sublabel container - initialized empty so we look for it until we find it
+    expected_sublabel = ""
 
     chrome_options = Options()
     chrome_options.add_argument("--window-size=1200,926")
@@ -255,17 +258,21 @@ def main():
 
                     wait_for_tooltip_data(driver, map_area, timeout=120, log_filename=log_filename)
 
-                    try:
-                        current_sublabel = driver.find_element(By.ID, "map-tooltip-sublabel").text.strip()
-                    except Exception:
-                        current_sublabel = "Unknown Period"
+                    # CRITICAL FIX: Only parse the DOM if we haven't found a sublabel text block yet
+                    if not expected_sublabel:
+                        try:
+                            parsed_label = driver.find_element(By.ID, "map-tooltip-sublabel").text.strip()
+                            if parsed_label != "":
+                                expected_sublabel = parsed_label
+                                log_live(f"Successfully locked expected sublabel text: '{expected_sublabel}' (Parsing stopped for future loops)", log_filename)
+                        except Exception:
+                            pass
 
                     # Only iterate over cities belonging to the current zoom region
                     for city in regional_cities:
                         tooltip = collect_tooltip(driver, map_area, city["x_offset"], city["y_offset"])
                         collected_data[city["city_name"]][f"{layer['prefix']}_{scenario}"] = tooltip
                         log_live(f"{city['city_name']} {layer['name']} {scenario} collected: {tooltip}", log_filename)
-                        collected_data[city["city_name"]]["expected_sublabel"] = current_sublabel
 
             # --- Snow exceedances ---
             driver.find_element(By.CSS_SELECTOR, "a[value='prob_sn']").click()
@@ -297,6 +304,9 @@ def main():
         end_time = datetime.now(ZoneInfo("America/New_York")).strftime("%Y-%m-%d %H:%M:%S")
         log_live(f"Script processing ended at: {end_time}", log_filename)
 
+        # Fallback if no sublabel string was extracted across any maps
+        final_sublabel = expected_sublabel if expected_sublabel else "Unknown Period"
+
         # --- Update Google Sheets ---
         for city in CITIES:
             sheet = client.open_by_url(SPREADSHEET_URL).worksheet(city["sheet_name"])
@@ -304,7 +314,7 @@ def main():
             
             row_to_write = [
                 current_datetime_display,
-                c_data.get("expected_sublabel", "Unknown Period"),
+                final_sublabel, # Passed down cleanly to Column B2
                 safe_float(c_data.get("snow_low_end")),
                 safe_float(c_data.get("snow_expected")),
                 safe_float(c_data.get("snow_high_end")),
