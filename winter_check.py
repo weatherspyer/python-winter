@@ -45,10 +45,10 @@ BASE_MAP_URL = "https://www.wpc.ncep.noaa.gov/Prob_Precip/?zoom={zoom_param}"
 
 # Cities configuration
 CITIES = [
-    {"zoom": "PBZ", "x_offset": -14, "y_offset": -194, "city_name": "Conneaut", "sheet_name": "Conneaut"},
-    {"zoom": "PBZ", "x_offset": 42, "y_offset": -40, "city_name": "Shaler", "sheet_name": "Shaler"},
-    {"zoom": "PBZ", "x_offset": -26, "y_offset": -106, "city_name": "Austintown", "sheet_name": "Austintown"},
-    {"zoom": "LWX", "x_offset": 23, "y_offset": -74, "city_name": "Haymarket", "sheet_name": "Haymarket"},
+    {"zoom": "PBZ", "x_offset": -24, "y_offset": -396, "city_name": "Conneaut", "sheet_name": "Conneaut"},
+    {"zoom": "PBZ", "x_offset": 92, "y_offset": -79, "city_name": "Shaler", "sheet_name": "Shaler"},
+    {"zoom": "PBZ", "x_offset": -56, "y_offset": 209, "city_name": "Austintown", "sheet_name": "Austintown"},
+    {"zoom": "PBZ", "x_offset": 510, "y_offset": 319, "city_name": "Haymarket", "sheet_name": "Haymarket"},
 ]
 
 LAYERS = [
