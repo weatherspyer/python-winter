@@ -215,7 +215,7 @@ def main():
     expected_sublabel = ""
 
     chrome_options = Options()
-    chrome_options.add_argument("--window-size=1200,926")
+    chrome_options.add_argument("--window-size=2448,1500")
     chrome_options.add_argument("--headless=new")
     driver = webdriver.Chrome(options=chrome_options)
 
