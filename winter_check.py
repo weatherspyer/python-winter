@@ -20,6 +20,7 @@ import traceback
 import requests
 import json
 import threading
+from collections import defaultdict
 
 # -----------------------------
 # CONFIG
@@ -37,27 +38,25 @@ GOOGLE_SCOPES = ["https://www.googleapis.com/auth/spreadsheets",
                  "https://www.googleapis.com/auth/drive"]
 
 SPREADSHEET_URL = f"https://docs.google.com/spreadsheets/d/{SHEET_ID}/edit"
-
-# Webhook URL
 WEBHOOK_URL = "https://script.google.com/macros/s/AKfycbzw8urLAI5RJNHsixvaQfRwKe-LBD2OwhXZJh8QBZkcPBZ8Y__5tcE6M7fnywm3N5NsMg/exec"
 
-# Cities configuration
+# Base URL template
+BASE_MAP_URL = "https://www.wpc.ncep.noaa.gov/Prob_Precip/?zoom={zoom_param}"
+
+# Cities configuration - added 'zoom' parameters to target regional domains
 CITIES = [
-    {"WFO": "PBZ", "x_offset": -14, "y_offset": -194, "city_name": "Conneaut", "sheet_name": "Conneaut"},
-    {"WFO": "PBZ", "x_offset": 42, "y_offset": -40, "city_name": "Shaler", "sheet_name": "Shaler"},
-    {"WFO": "PBZ", "x_offset": -26, "y_offset": -106, "city_name": "Austintown", "sheet_name": "Austintown"},
-    {"WFO": "PBZ", "x_offset": 260, "y_offset": 158, "city_name": "Haymarket", "sheet_name": "Haymarket"},
+    {"zoom": "PBZ", "x_offset": -14, "y_offset": -194, "city_name": "Conneaut", "sheet_name": "Conneaut"},
+    {"zoom": "PBZ", "x_offset": 42, "y_offset": -40, "city_name": "Shaler", "sheet_name": "Shaler"},
+    {"zoom": "PBZ", "x_offset": -26, "y_offset": -106, "city_name": "Austintown", "sheet_name": "Austintown"},
+    {"zoom": "LWX", "x_offset": 23, "y_offset": -76, "city_name": "Haymarket", "sheet_name": "Haymarket"},
 ]
 
-# Layers and scenarios
 LAYERS = [
     {"name": "Snow", "value": "prob_sn", "prefix": "snow"},
     {"name": "Ice", "value": "prob_ice", "prefix": "ice"},
     {"name": "PQPF", "value": "pqpf", "prefix": "pqpf"}
 ]
 SCENARIOS = ["expected", "low_end", "high_end"]
-
-# Snow exceedance values
 EXCEEDANCE_VALUES = ["0p10", "1p00", "2p00", "4p00", "6p00", "8p00", "12p0", "18p0"]
 
 # -----------------------------
@@ -122,7 +121,6 @@ def wait_for_tooltip_data(driver, map_area, timeout=60, log_filename=None):
             tooltip_text = driver.find_element(By.ID, "map-tooltip-number").text.strip().replace(" in.", "")
             sublabel_text = driver.find_element(By.ID, "map-tooltip-sublabel").text.strip()
             
-            # Continuous check to ensure BOTH data items are actively populated
             if tooltip_text != "" and sublabel_text != "":
                 if log_filename:
                     log_live(f"Tooltip ready ({tooltip_text}) and Sublabel ready ({sublabel_text})", log_filename)
@@ -142,7 +140,7 @@ def collect_tooltip(driver, map_area, x_offset, y_offset, is_percent=False):
             dx = random.randint(-5, 5)
             dy = random.randint(-5, 5)
             actions.move_to_element_with_offset(map_area, x_offset + dx, y_offset + dy).perform()
-            time.sleep(1)
+            time.sleep(0.4) 
             tooltip = driver.find_element(By.ID, "map-tooltip-number").text.strip()
             tooltip = tooltip.replace(" in.", "")
             if is_percent:
@@ -150,10 +148,21 @@ def collect_tooltip(driver, map_area, x_offset, y_offset, is_percent=False):
             if tooltip != "":
                 break
         except Exception:
-            time.sleep(0.5)
+            time.sleep(0.3)
     if tooltip == "":
         tooltip = "999"
     return tooltip
+
+
+def safe_float(value, default=999.0):
+    if not value:
+        return default
+    try:
+        if str(value).strip().upper() in ["T", "TRACE"]:
+            return 0.01 
+        return float(value)
+    except ValueError:
+        return default
 
 
 def update_google_sheet(sheet, row_to_write):
@@ -177,17 +186,13 @@ def check_and_click_refresh(driver, log_filename):
 
 def call_webhook_async():
     payload = {"functionName": "checkAndNotify"}
-
     def _send():
         try:
-            # very short timeout = don't wait
             requests.post(WEBHOOK_URL, json=payload, timeout=15)
         except requests.exceptions.ReadTimeout:
-            # expected behavior (we don't wait for response)
             pass
         except Exception as e:
             print(f"Webhook request failed: {e}")
-
     threading.Thread(target=_send, daemon=True).start()
     print("Webhook triggered (async)")
 
@@ -211,103 +216,112 @@ def main():
     chrome_options.add_argument("--headless=new")
     driver = webdriver.Chrome(options=chrome_options)
 
+    # Group cities by zoom zone to optimize page loads
+    cities_by_zoom = defaultdict(list)
+    for city in CITIES:
+        cities_by_zoom[city["zoom"]].append(city)
+
     try:
-        driver.get("https://www.wpc.ncep.noaa.gov/Prob_Precip/?zoom=PBZ")
-        time.sleep(3)
+        # Loop through each regional map view required
+        for zoom_param, regional_cities in cities_by_zoom.items():
+            target_url = BASE_MAP_URL.format(zoom_param=zoom_param)
+            log_live(f"Navigating to regional map URL: {target_url}", log_filename)
+            driver.get(target_url)
+            time.sleep(5)
 
-        check_and_click_refresh(driver, log_filename)
-        map_area = driver.find_element(By.ID, "map")
+            check_and_click_refresh(driver, log_filename)
+            map_area = driver.find_element(By.ID, "map")
 
-        # --- Collect Snow, Ice, PQPF ---
-        for layer in LAYERS:
-            driver.find_element(By.CSS_SELECTOR, f"a[value='{layer['value']}']").click()
-            log_live(f"Clicked {layer['name']} layer", log_filename)
-            time.sleep(6)
-
-            if check_and_click_refresh(driver, log_filename):
+            # --- Collect Snow, Ice, PQPF ---
+            for layer in LAYERS:
                 driver.find_element(By.CSS_SELECTOR, f"a[value='{layer['value']}']").click()
-                log_live(f"Re-clicked {layer['name']} layer after refresh", log_filename)
+                log_live(f"[{zoom_param}] Clicked {layer['name']} layer", log_filename)
                 time.sleep(6)
 
-            for scenario in SCENARIOS:
-                driver.find_element(By.CSS_SELECTOR, f"a[value='{scenario}']").click()
-                log_live(f"{layer['name']} - switched to scenario: {scenario}", log_filename)
-                time.sleep(2)
-
                 if check_and_click_refresh(driver, log_filename):
+                    driver.find_element(By.CSS_SELECTOR, f"a[value='{layer['value']}']").click()
+                    log_live(f"[{zoom_param}] Re-clicked {layer['name']} layer after refresh", log_filename)
+                    time.sleep(6)
+
+                for scenario in SCENARIOS:
                     driver.find_element(By.CSS_SELECTOR, f"a[value='{scenario}']").click()
-                    log_live(f"Re-clicked scenario {scenario} after refresh", log_filename)
-                    time.sleep(6)
+                    log_live(f"[{zoom_param}] {layer['name']} - switched to scenario: {scenario}", log_filename)
+                    time.sleep(2)
 
-                # This verification ensures both the numbers and sublabels are loaded on the DOM map
-                wait_for_tooltip_data(driver, map_area, timeout=120, log_filename=log_filename)
+                    if check_and_click_refresh(driver, log_filename):
+                        driver.find_element(By.CSS_SELECTOR, f"a[value='{scenario}']").click()
+                        log_live(f"[{zoom_param}] Re-clicked scenario {scenario} after refresh", log_filename)
+                        time.sleep(6)
 
-                # Safely harvest the current global sublabel text
+                    wait_for_tooltip_data(driver, map_area, timeout=120, log_filename=log_filename)
+
+                    try:
+                        current_sublabel = driver.find_element(By.ID, "map-tooltip-sublabel").text.strip()
+                    except Exception:
+                        current_sublabel = "Unknown Period"
+
+                    # Only iterate over cities belonging to the current zoom region
+                    for city in regional_cities:
+                        tooltip = collect_tooltip(driver, map_area, city["x_offset"], city["y_offset"])
+                        collected_data[city["city_name"]][f"{layer['prefix']}_{scenario}"] = tooltip
+                        log_live(f"{city['city_name']} {layer['name']} {scenario} collected: {tooltip}", log_filename)
+                        collected_data[city["city_name"]]["expected_sublabel"] = current_sublabel
+
+            # --- Snow exceedances ---
+            driver.find_element(By.CSS_SELECTOR, "a[value='prob_sn']").click()
+            log_live(f"[{zoom_param}] Clicked Snow layer for exceedances", log_filename)
+            time.sleep(3)
+            map_area = driver.find_element(By.ID, "map")
+
+            for value in EXCEEDANCE_VALUES:
                 try:
-                    current_sublabel = driver.find_element(By.ID, "map-tooltip-sublabel").text.strip()
-                except Exception:
-                    current_sublabel = "Unknown Period"
-
-                for city in CITIES:
-                    tooltip = collect_tooltip(driver, map_area, city["x_offset"], city["y_offset"])
-                    collected_data[city["city_name"]][f"{layer['prefix']}_{scenario}"] = tooltip
-                    log_live(f"{city['city_name']} {layer['name']} {scenario} collected: {tooltip}", log_filename)
-                    
-                    # Store sublabel iteratively per city to avoid missing/blank entries later
-                    collected_data[city["city_name"]]["expected_sublabel"] = current_sublabel
-
-        # --- Snow exceedances ---
-        driver.find_element(By.CSS_SELECTOR, f"a[value='prob_sn']").click()
-        log_live("Clicked Snow layer for exceedances", log_filename)
-        time.sleep(3)
-        map_area = driver.find_element(By.ID, "map")
-
-        for value in EXCEEDANCE_VALUES:
-            try:
-                driver.find_element(By.CSS_SELECTOR, f"a[value='{value}']").click()
-                log_live(f"Clicked Snow exceedance {value}", log_filename)
-                time.sleep(2)
-
-                if check_and_click_refresh(driver, log_filename):
                     driver.find_element(By.CSS_SELECTOR, f"a[value='{value}']").click()
-                    log_live(f"Re-clicked Snow exceedance {value} after refresh", log_filename)
-                    time.sleep(6)
+                    log_live(f"[{zoom_param}] Clicked Snow exceedance {value}", log_filename)
+                    time.sleep(2)
 
-                wait_for_tooltip_data(driver, map_area, timeout=60, log_filename=log_filename)
+                    if check_and_click_refresh(driver, log_filename):
+                        driver.find_element(By.CSS_SELECTOR, f"a[value='{value}']").click()
+                        log_live(f"[{zoom_param}] Re-clicked Snow exceedance {value} after refresh", log_filename)
+                        time.sleep(6)
 
-                for city in CITIES:
-                    tooltip = collect_tooltip(driver, map_area, city["x_offset"], city["y_offset"], is_percent=True)
-                    collected_data[city["city_name"]][f"snow_exceed_{value}"] = tooltip
-                    log_live(f"{city['city_name']} Snow exceed {value} collected: {tooltip}", log_filename)
-            except Exception as e:
-                log_live(f"Failed to collect Snow exceedance {value}: {e}", log_filename)
+                    wait_for_tooltip_data(driver, map_area, timeout=60, log_filename=log_filename)
+
+                    # Only iterate over cities belonging to the current zoom region
+                    for city in regional_cities:
+                        tooltip = collect_tooltip(driver, map_area, city["x_offset"], city["y_offset"], is_percent=True)
+                        collected_data[city["city_name"]][f"snow_exceed_{value}"] = tooltip
+                        log_live(f"{city['city_name']} Snow exceed {value} collected: {tooltip}", log_filename)
+                except Exception as e:
+                    log_live(f"Failed to collect Snow exceedance {value} for region {zoom_param}: {e}", log_filename)
 
         end_time = datetime.now(ZoneInfo("America/New_York")).strftime("%Y-%m-%d %H:%M:%S")
-        log_live(f"Script ended at: {end_time}", log_filename)
+        log_live(f"Script processing ended at: {end_time}", log_filename)
 
         # --- Update Google Sheets ---
         for city in CITIES:
             sheet = client.open_by_url(SPREADSHEET_URL).worksheet(city["sheet_name"])
+            c_data = collected_data[city["city_name"]]
+            
             row_to_write = [
-                current_datetime_display,  # A2
-                collected_data[city["city_name"]].get("expected_sublabel", "Unknown Period"),  # B2
-                float(collected_data[city["city_name"]]["snow_low_end"]),
-                float(collected_data[city["city_name"]]["snow_expected"]),
-                float(collected_data[city["city_name"]]["snow_high_end"]),
-                float(collected_data[city["city_name"]]["ice_low_end"]),
-                float(collected_data[city["city_name"]]["ice_expected"]),
-                float(collected_data[city["city_name"]]["ice_high_end"]),
-                float(collected_data[city["city_name"]]["pqpf_low_end"]),
-                float(collected_data[city["city_name"]]["pqpf_expected"]),
-                float(collected_data[city["city_name"]]["pqpf_high_end"]),
-                float(collected_data[city["city_name"]]["snow_exceed_0p10"]),
-                float(collected_data[city["city_name"]]["snow_exceed_1p00"]),
-                float(collected_data[city["city_name"]]["snow_exceed_2p00"]),
-                float(collected_data[city["city_name"]]["snow_exceed_4p00"]),
-                float(collected_data[city["city_name"]]["snow_exceed_6p00"]),
-                float(collected_data[city["city_name"]]["snow_exceed_8p00"]),
-                float(collected_data[city["city_name"]]["snow_exceed_12p0"]),
-                float(collected_data[city["city_name"]]["snow_exceed_18p0"]),
+                current_datetime_display,
+                c_data.get("expected_sublabel", "Unknown Period"),
+                safe_float(c_data.get("snow_low_end")),
+                safe_float(c_data.get("snow_expected")),
+                safe_float(c_data.get("snow_high_end")),
+                safe_float(c_data.get("ice_low_end")),
+                safe_float(c_data.get("ice_expected")),
+                safe_float(c_data.get("ice_high_end")),
+                safe_float(c_data.get("pqpf_low_end")),
+                safe_float(c_data.get("pqpf_expected")),
+                safe_float(c_data.get("pqpf_high_end")),
+                safe_float(c_data.get("snow_exceed_0p10")),
+                safe_float(c_data.get("snow_exceed_1p00")),
+                safe_float(c_data.get("snow_exceed_2p00")),
+                safe_float(c_data.get("snow_exceed_4p00")),
+                safe_float(c_data.get("snow_exceed_6p00")),
+                safe_float(c_data.get("snow_exceed_8p00")),
+                safe_float(c_data.get("snow_exceed_12p0")),
+                safe_float(c_data.get("snow_exceed_18p0")),
                 start_time,
                 end_time
             ]
