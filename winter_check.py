@@ -221,7 +221,7 @@ def main():
     options.add_argument("--disable-dev-shm-usage")
     
     # Initialize undetected-chromedriver in headless mode
-    driver = uc.Chrome(options=options, headless=True)
+    driver = uc.Chrome(options=options, headless=True, version_main=154)
 
     # Group cities by zoom zone to optimize page loads
     cities_by_zoom = defaultdict(list)
