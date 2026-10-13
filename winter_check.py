@@ -4,7 +4,9 @@ from selenium.webdriver.common.action_chains import ActionChains
 from selenium.webdriver.common.by import By
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
-import undetected_chromedriver as uc
+from selenium import webdriver
+from selenium.webdriver.chrome.options import Options
+from selenium_stealth import stealth
 import time
 import gspread
 from google.oauth2.service_account import Credentials
@@ -214,14 +216,25 @@ def main():
     
     # Global sublabel container - initialized empty so we look for it until we find it
     expected_sublabel = ""
-
-    options = uc.ChromeOptions()
-    options.add_argument("--window-size=2448,1500")
-    options.add_argument("--no-sandbox")
-    options.add_argument("--disable-dev-shm-usage")
     
-    # Initialize undetected-chromedriver in headless mode
-    driver = uc.Chrome(options=options, headless=True, version_main=154)
+    chrome_options = Options()
+    chrome_options.add_argument("--window-size=2448,1500")
+    chrome_options.add_argument("--headless=new")
+    chrome_options.add_argument("--no-sandbox")
+    chrome_options.add_argument("--disable-dev-shm-usage")
+    chrome_options.add_argument("--disable-blink-features=AutomationControlled")
+    
+    driver = webdriver.Chrome(options=chrome_options)
+
+    # Apply stealth to hide automation fingerprints from CloudFront
+    stealth(driver,
+            languages=["en-US", "en"],
+            vendor="Google Inc.",
+            platform="Win32",
+            webgl_vendor="Intel Inc.",
+            renderer="Intel Iris OpenGL Engine",
+            fix_hairline=True,
+    )
 
     # Group cities by zoom zone to optimize page loads
     cities_by_zoom = defaultdict(list)
