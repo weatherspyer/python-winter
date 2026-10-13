@@ -3,3 +3,4 @@ gspread
 google-auth
 requests
 pillow
+undetected-chromedriver
