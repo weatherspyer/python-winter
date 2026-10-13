@@ -1,11 +1,10 @@
 #!/usr/bin/env python3
 
-from selenium import webdriver
 from selenium.webdriver.common.action_chains import ActionChains
 from selenium.webdriver.common.by import By
-from selenium.webdriver.chrome.options import Options
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
+import undetected_chromedriver as uc
 import time
 import gspread
 from google.oauth2.service_account import Credentials
@@ -216,13 +215,13 @@ def main():
     # Global sublabel container - initialized empty so we look for it until we find it
     expected_sublabel = ""
 
-    chrome_options = Options()
-    chrome_options = Options()
-    chrome_options.add_argument("--window-size=2448,1500")
-    chrome_options.add_argument("--headless=new")
-    chrome_options.add_argument("--no-sandbox")              # <-- Required for GitHub Actions
-    chrome_options.add_argument("--disable-dev-shm-usage")   # <-- Required for GitHub Actions
-    driver = webdriver.Chrome(options=chrome_options)
+    options = uc.ChromeOptions()
+    options.add_argument("--window-size=2448,1500")
+    options.add_argument("--no-sandbox")
+    options.add_argument("--disable-dev-shm-usage")
+    
+    # Initialize undetected-chromedriver in headless mode
+    driver = uc.Chrome(options=options, headless=True)
 
     # Group cities by zoom zone to optimize page loads
     cities_by_zoom = defaultdict(list)
