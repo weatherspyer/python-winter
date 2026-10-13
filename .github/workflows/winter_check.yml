@@ -44,8 +44,15 @@ jobs:
             echo "Attempt $i failed. Retrying in 20 seconds..."
             sleep 20
           done
-
+          
           if [ $success -ne 1 ]; then
             echo "All attempts failed."
             exit 1
           fi
+
+      - name: Upload Error Screenshots
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: error-screenshots
+          path: screenshots/
