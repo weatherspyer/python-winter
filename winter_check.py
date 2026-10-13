@@ -4,6 +4,8 @@ from selenium import webdriver
 from selenium.webdriver.common.action_chains import ActionChains
 from selenium.webdriver.common.by import By
 from selenium.webdriver.chrome.options import Options
+from selenium.webdriver.support.ui import WebDriverWait
+from selenium.webdriver.support import expected_conditions as EC
 import time
 import gspread
 from google.oauth2.service_account import Credentials
@@ -226,37 +228,55 @@ def main():
 
     try:
         # Loop through each regional map view required
+# Loop through each regional map view required
         for zoom_param, regional_cities in cities_by_zoom.items():
             target_url = BASE_MAP_URL.format(zoom_param=zoom_param)
             log_live(f"Navigating to regional map URL: {target_url}", log_filename)
             driver.get(target_url)
-            time.sleep(5)
+
+            # CRITICAL FIX: Explicitly wait for the map to load in the CI runner
+            map_area = WebDriverWait(driver, 30).until(
+                EC.presence_of_element_located((By.ID, "map"))
+            )
 
             check_and_click_refresh(driver, log_filename)
-            map_area = driver.find_element(By.ID, "map")
 
             # --- Collect Snow, Ice, PQPF ---
             for layer in LAYERS:
-                driver.find_element(By.CSS_SELECTOR, f"a[value='{layer['value']}']").click()
+                # Explicitly wait for the layer link to be clickable
+                layer_btn = WebDriverWait(driver, 20).until(
+                    EC.element_to_be_clickable((By.CSS_SELECTOR, f"a[value='{layer['value']}']"))
+                )
+                layer_btn.click()
                 log_live(f"[{zoom_param}] Clicked {layer['name']} layer", log_filename)
                 time.sleep(6)
 
                 if check_and_click_refresh(driver, log_filename):
-                    driver.find_element(By.CSS_SELECTOR, f"a[value='{layer['value']}']").click()
+                    layer_btn = WebDriverWait(driver, 20).until(
+                        EC.element_to_be_clickable((By.CSS_SELECTOR, f"a[value='{layer['value']}']"))
+                    )
+                    layer_btn.click()
                     log_live(f"[{zoom_param}] Re-clicked {layer['name']} layer after refresh", log_filename)
                     time.sleep(6)
 
                 for scenario in SCENARIOS:
-                    driver.find_element(By.CSS_SELECTOR, f"a[value='{scenario}']").click()
+                    scenario_btn = WebDriverWait(driver, 20).until(
+                        EC.element_to_be_clickable((By.CSS_SELECTOR, f"a[value='{scenario}']"))
+                    )
+                    scenario_btn.click()
                     log_live(f"[{zoom_param}] {layer['name']} - switched to scenario: {scenario}", log_filename)
                     time.sleep(2)
 
                     if check_and_click_refresh(driver, log_filename):
-                        driver.find_element(By.CSS_SELECTOR, f"a[value='{scenario}']").click()
+                        scenario_btn = WebDriverWait(driver, 20).until(
+                            EC.element_to_be_clickable((By.CSS_SELECTOR, f"a[value='{scenario}']"))
+                        )
+                        scenario_btn.click()
                         log_live(f"[{zoom_param}] Re-clicked scenario {scenario} after refresh", log_filename)
                         time.sleep(6)
 
                     wait_for_tooltip_data(driver, map_area, timeout=120, log_filename=log_filename)
+                
 
                     # CRITICAL FIX: Only parse the DOM if we haven't found a sublabel text block yet
                     if not expected_sublabel:
