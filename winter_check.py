@@ -217,8 +217,11 @@ def main():
     expected_sublabel = ""
 
     chrome_options = Options()
+    chrome_options = Options()
     chrome_options.add_argument("--window-size=2448,1500")
     chrome_options.add_argument("--headless=new")
+    chrome_options.add_argument("--no-sandbox")              # <-- Required for GitHub Actions
+    chrome_options.add_argument("--disable-dev-shm-usage")   # <-- Required for GitHub Actions
     driver = webdriver.Chrome(options=chrome_options)
 
     # Group cities by zoom zone to optimize page loads
