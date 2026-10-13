@@ -248,45 +248,29 @@ def main():
             target_url = BASE_MAP_URL.format(zoom_param=zoom_param)
             log_live(f"Navigating to regional map URL: {target_url}", log_filename)
             driver.get(target_url)
-
-            # CRITICAL FIX: Explicitly wait for the map to load in the CI runner
-            map_area = WebDriverWait(driver, 30).until(
-                EC.presence_of_element_located((By.ID, "map"))
-            )
+            time.sleep(5)
 
             check_and_click_refresh(driver, log_filename)
+            map_area = driver.find_element(By.ID, "map")
 
             # --- Collect Snow, Ice, PQPF ---
             for layer in LAYERS:
-                # Explicitly wait for the layer link to be clickable
-                layer_btn = WebDriverWait(driver, 20).until(
-                    EC.element_to_be_clickable((By.CSS_SELECTOR, f"a[value='{layer['value']}']"))
-                )
-                layer_btn.click()
+                driver.find_element(By.CSS_SELECTOR, f"a[value='{layer['value']}']").click()
                 log_live(f"[{zoom_param}] Clicked {layer['name']} layer", log_filename)
                 time.sleep(6)
 
                 if check_and_click_refresh(driver, log_filename):
-                    layer_btn = WebDriverWait(driver, 20).until(
-                        EC.element_to_be_clickable((By.CSS_SELECTOR, f"a[value='{layer['value']}']"))
-                    )
-                    layer_btn.click()
+                    driver.find_element(By.CSS_SELECTOR, f"a[value='{layer['value']}']").click()
                     log_live(f"[{zoom_param}] Re-clicked {layer['name']} layer after refresh", log_filename)
                     time.sleep(6)
 
                 for scenario in SCENARIOS:
-                    scenario_btn = WebDriverWait(driver, 20).until(
-                        EC.element_to_be_clickable((By.CSS_SELECTOR, f"a[value='{scenario}']"))
-                    )
-                    scenario_btn.click()
+                    driver.find_element(By.CSS_SELECTOR, f"a[value='{scenario}']").click()
                     log_live(f"[{zoom_param}] {layer['name']} - switched to scenario: {scenario}", log_filename)
                     time.sleep(2)
 
                     if check_and_click_refresh(driver, log_filename):
-                        scenario_btn = WebDriverWait(driver, 20).until(
-                            EC.element_to_be_clickable((By.CSS_SELECTOR, f"a[value='{scenario}']"))
-                        )
-                        scenario_btn.click()
+                        driver.find_element(By.CSS_SELECTOR, f"a[value='{scenario}']").click()
                         log_live(f"[{zoom_param}] Re-clicked scenario {scenario} after refresh", log_filename)
                         time.sleep(6)
 
